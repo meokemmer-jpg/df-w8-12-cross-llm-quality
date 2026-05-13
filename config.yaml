@@ -1,0 +1,297 @@
+# DF-W8-12 Cross-LLM-Quality-Gate Configuration [CRUX-MK]
+# Multi-Provider-LLM-Output-Konsens-Pruefung als Pre-Production-Gate
+# Pattern-Reuse aus DF-86 (NLM-Daily-Sync) + DF-95 (Cross-LLM-Wargame-Engine)
+# Build-Trigger: Architekt-autonom 2026-05-07 (Mac Welle-8-E DF-Wave-1)
+
+df_id: DF-W8-12
+df_name: cross-llm-quality-gate
+version: 0.1.0-PHASE-1
+status: PHASE-1-SCAFFOLD
+crux-mk: true
+
+description: |
+  Multi-Provider-LLM-Output-Konsens-Pruefung als Pre-Production-Gate fuer alle
+  Plattform-LLM-Outputs (HeyLou-OTA AI-Personalisierung, 9OS-ABS-Pricing-AI,
+  9OS-Voice-GSA). Bash-Wrapper fuer Codex/Gemini/Copilot/Grok mit Auth-Check
+  + Cooldown-Detection. Konsens-Algorithmus mit G3.2-Divergenz-Proxy-Check.
+
+# === Default-Action (Welle-51 Batch-5 Migration, per Schicht-2 v1.2) ===
+# Migration-Welle: Welle-51 Batch-5
+default_action:
+  description: "Multi-Provider-LLM-Output-Konsens-Gate (Codex/Gemini/Copilot/Grok) mit G3.2-Divergenz-Proxy-Check + Cooldown-Detection als Pre-Production-Gate fuer HeyLou-OTA/9OS-Pricing/9OS-Voice"
+  rho_per_run_eur: 90
+  rho_validation_source: unvalidated
+  block_gates:
+    - gate_id: K11
+      block_reason: "LLM-Provider-Failure cascading auf andere Provider (Cooldown-Trigger gegenseitig) ODER Per-Provider-DLQ ueberlauft"
+      false_block_cost_eur: 35
+      legitimate_block_condition: "Grok-Halluzinations-Rate > 30% setzt Cooldown ODER >2 Provider gleichzeitig auth_expired"
+    - gate_id: K12
+      block_reason: "Provenance-Field (provider+model+version+timestamp) fehlt in Response ODER Konsens-Algo nicht-deterministisch"
+      false_block_cost_eur: 30
+      legitimate_block_condition: "LLM-Response ohne Modell-Version ODER Konsens-Score-Drift > 0.05 zwischen Runs"
+    - gate_id: K16
+      block_reason: "Concurrent-Spawn-Mutex verletzt (mehrere Gate-Instanzen auf gleicher Audit-Log)"
+      false_block_cost_eur: 30
+      legitimate_block_condition: "Lock-Dir existiert + pgrep findet 2+ Engine-Instanzen ODER STOP.flag aktiv"
+  graceful_degradation_path: "degraded_3_provider (1 LLM down, 3 reichen fuer 2OF3-Konsens) ODER degraded_2_provider (CONDITIONAL-Tier statt HARDENED) ODER standalone (Claude-only Fallback mit CONDITIONAL-Verdict)"
+
+# === Tier-2 Pflicht-Check (when-to-archon.md) ===
+
+tier_2_check:
+  lambda_per_month_estimate: 100  # 100+ Runs/Monat (jeder LLM-Output durchlaeuft Gate)
+  narrow_scope: "Multi-LLM-Konsens-Pruefung, max 4 LLMs (Codex/Gemini/Copilot/Grok)"
+  determinism: 0.95   # Konsens-Algorithmus deterministic
+  rollback_seconds: 10  # STOP.flag-Mechanik
+  test_coverage_target: 0.95
+  k0_protected: true   # Gate ist Sicherheits-Pflicht, kein Money-Move
+  q0_measurable: true  # Konsens-Score quantifizierbar
+  escalation_after_n_fails: 2
+  rho_budget_eur_day: 2  # LLM-Calls Sunk-Cost-Flat
+  audit_trail: branch-hub/audit/df-w8-12-quality-gate.jsonl
+
+# === K11-K16 Akzeptanz-Kriterien (rules/df-akzeptanz-kriterien.md) ===
+
+k11_cascade_containment:
+  cascade_isolation: hard       # Gate isoliert pro LLM-Call
+  failure_blast_radius: 1       # Nur Gate-Call selbst, keine Cascade
+  dependency_dlq_strategy: "per Provider eigene DLQ + jsonl-Backup-Pfad"
+
+k12_distillation_resistenz:
+  output_feeds_into_training: false
+  provenance_required_in_output: true   # provider+model+version+timestamp pro Response
+  non_llm_validation_layer: deterministic-konsens-algo
+
+k13_independent_ground_truth:
+  external_anchor_type: github_actions_test_runner  # deterministischer Test als Anker
+  external_anchor_validation_frequency: "pro-call (alle 4 LLMs verfuegbar mit Cooldown-Check)"
+  pre_action_domain_check:
+    env_tag: "dev/staging/prod check pre-gate-call"
+    mount_point: "n/a (HTTP/CLI calls, keine FS-Mutationen ausser Audit-Log)"
+    network_region: "fixed eu-central-1 fuer DSGVO"
+  pre_action_backup_check:
+    backup_status: "jsonl-Audit-Log Pflicht pre-each-call"
+    replication_lag: "n/a (append-only audit-log, idempotent)"
+  pre_action_blast_radius_check:
+    blast_radius: "read-only (Gate prueft nur Konsens, keine LLM-Mutation)"
+    reversibility_class: "state_only (Audit-Log append-only, keine Side-Effects auf LLMs)"
+
+k14_human_override_decay:
+  override_complexity: single_command  # STOP.flag in /tmp/df-w8-12.stop
+  override_documentation_freshness_days: 30
+  martin_review_cadence: weekly
+  bus_factor_handover_drilled: false  # pending Sebastian-COO-Probe
+
+k15_entropy_budget:
+  entropy_added_loc_estimate: 800
+  entropy_added_concepts:
+    - ConsensusScore
+    - ConvergenceClass
+    - ProviderDivergence
+    - G32DivergenceProxy
+    - LLMResponse
+    - ProviderHealth
+  entropy_justified_by_rho: "65k_eur_per_year_geschaetzt + Q_0-Schutz (Multi-LLM-Konsens vs Single-LLM-Risk)"
+  entropy_subtractive_potential: "ersetzt manuelle Multi-Tab-LLM-Vergleiche (~3h/Woche) + reduziert Production-Bug-Risk"
+
+k16_concurrent_spawn_mutex:
+  concurrent_spawn_protection: both
+  lock_dir: /tmp/df-w8-12.lock
+  lock_stale_age_h: 6
+  engine_pgrep_check: true
+  lock_release_on: EXIT_INT_TERM
+
+k11b_pipeline_cost_estimate:
+  pipeline_cost_estimate_required: true
+  cost_estimate_method: dynamic_first_iter
+  quota_budget_ceiling: 50  # max 50 LLM-Calls pro Run (4 LLMs * Kalibrierungs-Faktor)
+  cost_overrun_action: warn  # Phase-1: warn, Phase-2: reduce_pipeline
+
+# === LC1-LC5 Lose-Coupling (rules/df-lose-coupling.md) ===
+
+lose_coupling:
+  LC1_graceful_degradation:
+    degradation_modes:
+      - full              # 4 LLMs konsens (Codex+Gemini+Copilot+Grok)
+      - degraded_grok     # Grok-Cooldown active -> 3 LLMs (max 2OF3-HARDENED)
+      - degraded_2llm     # 2 LLMs verfuegbar -> reduced-confidence-Mode (max SIM-HARDENED)
+      - standalone        # 1 LLM verfuegbar -> SINGLE-LLM-Mode (max CONDITIONAL)
+    degradation_test_required: true
+
+  LC2_direct_mode:
+    direct_mode_available: true
+    direct_mode_capability: 0.6   # 1-LLM-Fallback liefert 60% der Full-Mode-Funktion
+    direct_mode_trigger: "any_external_llm_unreachable >60s OR rate-limit / auth-expired / cooldown"
+
+  LC3_circuit_breaker:
+    circuit_breaker_timeout_s: 30
+    circuit_breaker_open_threshold: 3
+    circuit_breaker_half_open_test_interval_s: 300
+
+  LC4_failure_isolation:
+    state_externalization: true   # consensus-state in jsonl + (Phase-2 Postgres)
+    idempotent_operations: true   # Re-Runs sicher (gleicher prompt -> gleicher Hash)
+    dependency_dlq_separate: true  # eigene DLQ pro Provider
+
+  LC5_health_check:
+    health_check_dependencies: []  # eigene Funktion = jsonl-Audit-Pfad + Disk
+    health_check_degraded_score: 0.7
+    health_check_endpoint_or_file: "/tmp/df-w8-12-health.json"
+
+# === Build-Plan (Phasen) ===
+
+build_plan:
+  phase_1_week_1:
+    items:
+      - LLMProvider Abstract-Class + 4 Subklassen (Codex/Gemini/Copilot/Grok)
+      - Bash-Wrapper-Pattern fuer CLI-Calls
+      - Auth-Check via List-Models / Help-Output
+      - Cooldown-Detection (rate-limit / quota / auth_expired Patterns)
+      - Timeout-Enforcement (Default 60s)
+      - ConsensusScore Dataclass
+      - ConsensusEngine (compute_consensus + Tier-Mapping)
+      - G3.2 Divergenz-Proxy-Detection (Provider-Family-Diversity)
+      - QualityGate Hauptklasse
+      - K16 Mutex (lock + pgrep) + STOP.flag
+      - LC3 Circuit-Breaker pro Provider
+      - LC1 Graceful-Degradation (full / degraded_grok / degraded_2llm / standalone)
+      - jsonl-Audit-Log
+      - Tests (>= 18 Tests pytest, mit Mocks fuer subprocess-CLI-Calls)
+    status: ACTIVE
+  phase_2_week_2:
+    items:
+      - Konsens-Algo Verfeinerung (3OF4 + 2OF3 Tier-Hierarchie)
+      - Postgres-State (consensus-history)
+      - Provider-Divergenz-Proxies erweitern (Lineage-Distance + Token-Prob-Variance)
+      - Replay-Mechanik (jsonl -> Postgres)
+    status: PENDING
+  phase_3_week_3:
+    items:
+      - Integration als Pre-Production-Hook
+      - KMO-Pipeline-Approval-Gate-Erweiterung
+      - DF-W8-18-Lineage-Integration (sende Konsens-Events zur Lineage-DB)
+    status: PENDING
+  phase_4_week_4:
+    items:
+      - Shadow-Mode 14 Tage Live-Probe
+      - Production-Aktivierung
+      - Monitoring (Konsens-Rate, Provider-Outage-Rate)
+    status: PENDING
+
+# === Operatives ===
+
+operations:
+  output_path: ~/Projects/dark-factories/df-w8-12-cross-llm-quality/
+  jsonl_audit_path: branch-hub/audit/df-w8-12-quality-gate.jsonl
+  jsonl_local_path: ~/.df-w8-12/quality-gate-audit.jsonl
+  stop_flag_path: /tmp/df-w8-12.stop
+  health_file_path: /tmp/df-w8-12-health.json
+  default_timeout_s: 60
+
+# === LLM-Provider-Configuration ===
+
+providers:
+  codex:
+    cli_command: codex
+    cli_args:
+      - exec
+      - --skip-git-repo-check
+    auth_check_cmd: ["codex", "--version"]
+    cooldown_patterns:
+      - "rate-limit"
+      - "rate limit"
+      - "quota"
+      - "INVALID_GRANT"
+      - "auth_expired"
+    family: openai
+    timeout_s: 60
+  gemini:
+    cli_command: gemini
+    cli_args:
+      - "-p"
+    auth_check_cmd: ["gemini", "--help"]
+    cooldown_patterns:
+      - "rate-limit"
+      - "RESOURCE_EXHAUSTED"
+      - "PERMISSION_DENIED"
+    family: google
+    timeout_s: 60
+  copilot:
+    cli_command: copilot
+    cli_args:
+      - "-p"
+      - "--allow-all-tools"
+    auth_check_cmd: ["copilot", "--help"]
+    cooldown_patterns:
+      - "rate-limit"
+      - "premium-request-quota"
+      - "auth required"
+    family: github_openai
+    timeout_s: 60
+  grok:
+    cli_command: grok-mcp  # placeholder; phase-1 mock fallback
+    cli_args: []
+    auth_check_cmd: ["grok-mcp", "--version"]
+    cooldown_patterns:
+      - "rate-limit"
+      - "x-search-quota"
+      - "cooldown"
+    family: xai
+    mock_mode: true  # Phase-1: mocked, Phase-2: real MCP-call
+    timeout_s: 60
+
+# === Konsens-Tier-Mapping (G3.2-Validation-Ready) ===
+
+consensus_tiers:
+  HARDENED:
+    requires_n_providers: 3   # mindestens 3 von 4
+    requires_consensus: ADOPT  # 3/3 ADOPT
+    requires_g3_2_proxies: 2   # mindestens 2 von 3 Proxies erfuellt
+  TWOOFTHREE_HARDENED:
+    requires_n_providers: 3
+    requires_consensus: ADOPT_OR_MODIFY_LIGHT  # 2/3 zustimmend
+    requires_g3_2_proxies: 1
+  SIM_HARDENED:
+    requires_n_providers: 3
+    requires_consensus: MODIFY_LIGHT  # 3/3 modify-light
+    requires_g3_2_proxies: 1
+  CONDITIONAL:
+    requires_n_providers: 1
+    requires_consensus: ANY
+    requires_g3_2_proxies: 0
+  REJECT:
+    requires_n_providers: 1
+    consensus_pattern: REJECT_MAJORITY  # 3/3 oder >50% REJECT
+
+# === rho-Schaetzung ===
+
+rho_estimate:
+  annual_eur: 65000
+  reason: "Vermiedene Production-Bugs durch Multi-LLM-Konsens-Pruefung. Pattern-Reuse DF-86 (NLM-Sync ROI) + DF-95 (Wargame-Engine) belegt fuer LLM-Pipeline-Kontexte."
+  schwer_quantifizierbar: false
+
+# === Dependencies (Phase-3+) ===
+
+dependencies_phase_3:
+  - DF-W8-18  # Plattform-Lineage-Tracker (Konsens-Events fuer Lineage-DB)
+  - KMO-Pipeline  # Approval-Gate-Erweiterung
+
+# === CRUX-Bindung ===
+
+crux_bindung:
+  K_0: "geschuetzt (Gate ist read-only, kein Money-Move; verhindert Production-Bugs durch Konsens)"
+  Q_0: "direkt erhoeht (Multi-LLM-Konsens vs Single-LLM-Hallucination-Risk)"
+  I_min: "strukturierte K11-K16 + LC1-LC5 + 4-Provider-Pflicht"
+  W_0: "Token-Cost negligibel (Sunk-Cost-Flat-LLMs); Martin-Bandbreite geschuetzt"
+
+# === Wargame-First-Pflicht-Status ===
+
+wargame_first_status:
+  status: SKELETON-PHASE-1
+  cross_llm_audit_pending: true
+  reason: "Architekt-autonom-startbar per SPEC-W8-DF-WAVE-1; Cross-LLM-2OF3-HARDENED-Pflicht vor Phase-3-Live-Aktivierung."
+  audit_subjects:
+    - "Sind 4 LLMs ausreichend oder mehr Provider noetig?"
+    - "Ist 30s timeout / 3 fails Default richtig kalibriert?"
+    - "Sind G3.2-Divergenz-Proxies vollstaendig?"
+    - "Stoppt Konsens-Tier-Mapping korrekt bei Provider-Cooldown?"
