@@ -1,0 +1,8 @@
+{
+  "df": "df-w8-12-cross-llm-quality",
+  "ts": "2026-06-05T18:01:39.968066+00:00",
+  "ok": true,
+  "bytes": 2053,
+  "model": "qwen2.5:14b-instruct",
+  "duration_s": 48.6
+}
