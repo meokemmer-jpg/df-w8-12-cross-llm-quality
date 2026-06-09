@@ -1,0 +1,12 @@
+{
+  "df": "df-w8-12-cross-llm-quality",
+  "ts": "2026-06-08T19:53:51.529639+00:00",
+  "has_src": true,
+  "parse_ok": true,
+  "has_tests": true,
+  "test_ran": true,
+  "tests_passed": true,
+  "code_hash": "2f5ae1bfc788262f",
+  "python": "3.14.4",
+  "crux": "[CRUX-MK]"
+}
