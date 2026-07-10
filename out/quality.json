@@ -1,9 +1,9 @@
 {
   "df": "df-w8-12-cross-llm-quality",
-  "ts": "2026-07-10T01:04:57.397324+00:00",
+  "ts": "2026-07-10T02:57:56.228320+00:00",
   "maturity": "TESTED",
   "maturity_level": 4,
   "evidence_grade": 4,
-  "wargame_verdict": null,
+  "wargame_verdict": "CONDITIONAL",
   "crux": "[CRUX-MK]"
 }
